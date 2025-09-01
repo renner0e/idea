@@ -19,3 +19,17 @@ builds all of aurora stuff
 just build aurora/config
 ```
 only builds config
+
+
+# Example Usage
+
+```Containerfile
+FROM ghcr.io/ublue-os/kinoite-main:latest
+
+COPY --from=localhost/aurora-wallpapers:latest /usr /usr
+
+COPY --from=localhost/aurora-logos:latest /usr /usr
+
+COPY --from=localhost/aurora-config:latest /usr /usr
+COPY --from=localhost/aurora-config:latest /etc /etc
+```
