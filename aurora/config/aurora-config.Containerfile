@@ -2,5 +2,5 @@
 
 FROM scratch
 
-COPY usr/ /output/usr/
-COPY etc/ /output/etc/
+COPY usr/ /usr/
+COPY etc/ /etc/
