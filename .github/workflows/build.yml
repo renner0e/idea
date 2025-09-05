@@ -20,7 +20,7 @@ jobs:
         uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
 
       - name: Check Just Syntax
-        uses: ublue-os/just@205c35468e90e4973e79ca37597be9cf242a5760
+        uses: ublue-os/just-action@205c35468e90e4973e79ca37597be9cf242a5760
 
       - name: Get directories with container files
         id: containerfiledirs
