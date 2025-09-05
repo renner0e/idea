@@ -35,11 +35,6 @@ mkdir -p /output/usr/share/plymouth/themes/spinner
 
 magick -background none fedora-logo.svg -quality 90 -resize $((128-3*2))x32 -gravity center -extent 128x32 /output/usr/share/plymouth/themes/spinner/watermark.png
 magick -background none fedora-logo.svg -quality 90 -resize $((128-3*2))x32 -gravity center -extent 128x32 /output/usr/share/plymouth/themes/spinner/kinoite-watermark.png
-
-
-
-
-
 EOF
 
 

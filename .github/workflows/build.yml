@@ -20,53 +20,29 @@ jobs:
         uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
 
       - name: Check Just Syntax
-        uses: ublue-os/just@205c35468e90e4973e79ca37597be9cf242a5760
+        uses: ublue-os/just-action@205c35468e90e4973e79ca37597be9cf242a5760
 
-      - name: Get directories with container files
-        id: containerfiledirs
+
+      - name: Build all containerfiles
         run: |
-          FILESLIST="./files.txt"
-          find . -type f -iname '*.Containerfile' -exec 'dirname' '{}' ';' 2>/dev/null | xargs -I{} echo "{}/**" > $FILESLIST
-          echo "fileslist=$FILESLIST" >> $GITHUB_OUTPUT
+          find . -name "*.Containerfile" | while read containerfile; do
+            # Extract name from filename
+            filename=$(basename "$containerfile")
+            name="${filename%.Containerfile}"  # Remove suffix
 
-      - name: Get all changed files from package directores
-        id: changed-package-files
-        uses: step-security/changed-files@95b56dadb92a30ca9036f16423fd3c088a71ee94 # v46
-        with:
-          files_from_source_file: ${{ steps.containerfiledirs.outputs.fileslist }}
+            # Determine directory to use as build context
+            dir=$(dirname "$containerfile")
 
-      - name: Get all packages that need to be rebuilt
-        id: packages
-        if: steps.changed-package-files.outputs.any_changed == 'true'
-        env:
-          ALL_CHANGED_FILES: ${{ steps.changed-package-files.outputs.all_changed_files }}
-        run: |
-          CONTAINERFILE_DIRS=()
-          while IFS= read -r -d $'\0'; do
-            CONTAINERFILE_DIRS+=("$(realpath "--relative-to=${GITHUB_WORKSPACE}" "$(dirname "${REPLY}")")")
-          done < <(find . -type f -iname '*.Containerfile' -print0)
+            echo "🔨 Building $name from $containerfile in $dir"
 
-          ALL_CONTAINERFILES=()
-          for file in ${ALL_CHANGED_FILES} ; do
-            if [ "${file##*.}" == "Containerfile" ] ; then
-              ALL_CONTAINERFILES+=("$(realpath --relative-to="${GITHUB_WORKSPACE}" "${file}")")
-              continue
-            fi
-            # We need this else PRs editing random files wont get the specs building due to not bumping them directly
-            # This way we still get the checks although we kinda need the bumped spec on the COPR (will be enforced after build)
-            cd "$(dirname "${file}")"
-            while : ; do
-              pwd
-              while IFS=  read -r -d $'\0'; do
-                ALL_CONTAINERFILES+=("$(realpath --relative-to="${GITHUB_WORKSPACE}" "${REPLY}")")
-              done < <(find . -maxdepth 1 -type f -iname "*.Containerfile" -print0)
-              [[ " ${CONTAINERFILE_DIRS[*]} " =~ [[:space:]]$(realpath --relative-to="${GITHUB_WORKSPACE}" ${PWD})[[:space:]] ]] && break
-              cd ..
-            done
-            cd "${GITHUB_WORKSPACE}"
+            podman build \
+              -f "$containerfile" \
+              -t "ghcr.io/${{ github.repository_owner }}/$name:latest" \
+              "$dir"
           done
 
-      - name: Check Just Syntax
+
+      - name: Generate Build Tags
         shell: bash
         run: |
           TAGS=$(just gen-build-tags | paste -sd "," -)
