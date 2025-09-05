@@ -66,6 +66,15 @@ jobs:
             cd "${GITHUB_WORKSPACE}"
           done
 
+      - name: Check Just Syntax
+        shell: bash
+        run: |
+          TAGS=$(just gen-build-tags | paste -sd "," -)
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "alias_tags=$(echo ${TAGS} | awk -F',' '{print $1}')" >> $GITHUB_OUTPUT
+          echo "sha_short=$(echo ${TAGS} | awk -F',' '{print $2}')" >> $GITHUB_OUTPUT
+          echo "date=$(echo ${TAGS} | awk -F',' '{print $3}')" >> $GITHUB_OUTPUT
+
       # Build image using Buildah action
       - name: Build Image
         id: build_image
@@ -75,8 +84,6 @@ jobs:
             ${{ needs.changed_files.outputs.containerfiles }}
           image: ${{ env.IMAGE_NAME }}
           tags: |
-            ${{ steps.generate-tags.outputs.alias_tags }}
-            ${{ steps.generate-tags.outputs.date }}
             ${{ steps.generate-tags.outputs.sha_short }}
           oci: true
 

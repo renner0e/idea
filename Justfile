@@ -48,9 +48,9 @@ build $package="" ghcr="0":
 
       podman build \
         --file "${containerfile}" \
+        --format oci \
         ${tag_args} \
         "$(dirname "${containerfile}")"
     done
 
 
-build-ghcr:
