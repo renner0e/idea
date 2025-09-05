@@ -84,7 +84,7 @@ jobs:
             ${{ needs.changed_files.outputs.containerfiles }}
           image: ${{ env.IMAGE_NAME }}
           tags: |
-            ${{ steps.generate-tags.outputs.sha_short }}
+            ${{ steps.generate-tags.outputs.tags }}
           oci: true
 
       # Workaround bug where capital letters in your GitHub username make it impossible to push to GHCR.
