@@ -7,7 +7,7 @@ on:
 jobs:
   changed_files:
     runs-on: ubuntu-latest
-    name: Get changed files
+    name: Build and push packages
     outputs:
       all_changed_files: ${{ steps.changed-package-files.outputs.all_changed_files }}
       any_changed: ${{ steps.changed-package-files.outputs.any_changed }}
