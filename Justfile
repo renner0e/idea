@@ -16,7 +16,7 @@ last-commit-package:
     #TODO: If the justfile or github workflows was changed build everything
     just build "$(git diff-tree --no-commit-id --name-only -r HEAD~1 | cut -f1,2 -d/ | uniq | grep -v Justfile)"
 
-gen-builds-tags:
+gen-build-tags:
     #!/usr/bin/env bash
     set -xeuo pipefail
     SHA_SHORT="$(git rev-parse --short HEAD)"
