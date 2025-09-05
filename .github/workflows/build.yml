@@ -23,64 +23,23 @@ jobs:
         uses: ublue-os/just-action@205c35468e90e4973e79ca37597be9cf242a5760
 
 
-
-      - name: Get directories with Containerfile files
-        id: Containerfiledirs
+      - name: Build all containerfiles
         run: |
-          set -x
-          FILESLIST="./files.txt"
-          # The extra xargs there is so that the changed-files action can find all the files
-          find . -type f -iname '*.Containerfile' -exec 'dirname' '{}' ';' 2>/dev/null | xargs -I{} echo "{}/**" > $FILESLIST
-          echo "fileslist=$FILESLIST" >> $GITHUB_OUTPUT
+          find . -name "*.Containerfile" | while read containerfile; do
+            # Extract name from filename
+            filename=$(basename "$containerfile")
+            name="${filename%.Containerfile}"  # Remove suffix
 
-      - name: Get all changed files from package directores
-        id: changed-package-files
-        uses: step-security/changed-files@95b56dadb92a30ca9036f16423fd3c088a71ee94 # v46
-        with:
-          files_from_source_file: ${{ steps.Containerfiledirs.outputs.fileslist }}
+            # Determine directory to use as build context
+            dir=$(dirname "$containerfile")
 
-      - name: Get all packages that need to be rebuilt
-        id: packages
-        if: steps.changed-package-files.outputs.any_changed == 'true'
-        env:
-          ALL_CHANGED_FILES: ${{ steps.changed-package-files.outputs.all_changed_files }}
-        run: |
-          set -x
+            echo "🔨 Building $name from $containerfile in $dir"
 
-          CONTAINERFILE_DIRS=()
-          while IFS= read -r -d $'\0'; do
-            CONTAINERFILE_DIRS+=("$(realpath "--relative-to=${GITHUB_WORKSPACE}" "$(dirname "${REPLY}")")")
-          done < <(find . -type f -iname '*.Containerfile' -print0)
-
-          ALL_CONTAINERFILES=()
-          for file in ${ALL_CHANGED_FILES} ; do
-            if [ "${file##*.}" == "Containerfile" ] ; then
-              ALL_CONTAINERFILES+=("$(realpath --relative-to="${GITHUB_WORKSPACE}" "${file}")")
-              continue
-            fi
-            # We need this else PRs editing random files wont get the Containerfiles building due to not bumping them directly
-            # This way we still get the checks although we kinda need the bumped Containerfile on the COPR (will be enforced after build)
-            cd "$(dirname "${file}")"
-            while : ; do
-              pwd
-              while IFS=  read -r -d $'\0'; do
-                ALL_CONTAINERFILES+=("$(realpath --relative-to="${GITHUB_WORKSPACE}" "${REPLY}")")
-              done < <(find . -maxdepth 1 -type f -iname "*.Containerfile" -print0)
-              [[ " ${CONTAINERFILE_DIRS[*]} " =~ [[:space:]]$(realpath --relative-to="${GITHUB_WORKSPACE}" ${PWD})[[:space:]] ]] && break
-              cd ..
-            done
-            cd "${GITHUB_WORKSPACE}"
+            podman build \
+              -f "$containerfile" \
+              -t "ghcr.io/${{ github.repository_owner }}/$name:latest" \
+              "$dir"
           done
-
-          # This is kind of a hack so that we get only unique Containerfiles
-          IFS=" " read -r -a ALL_CONTAINERFILES <<< "$(tr ' ' '\n' <<< "${ALL_CONTAINERFILES[@]}" | sort -u | tr '\n' ' ')"
-
-          MATRIX="{\"Containerfiles\":[]}"
-          for Containerfile in "${ALL_CONTAINERFILES[@]}" ; do
-            [ -e "$Containerfile" ] && MATRIX=$(jq -c ".Containerfile += [\"$Containerfile\"]" <<< $MATRIX)
-          done
-
-          echo "Containerfiles=$(jq -r -c '.Containerfile' <<< "${MATRIX}")" >> $GITHUB_OUTPUT
 
 
       - name: Generate Build Tags
