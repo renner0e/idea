@@ -1,0 +1,156 @@
+name: Build packages in CI
+
+on:
+  merge_group:
+  pull_request:
+
+jobs:
+  changed_files:
+    runs-on: ubuntu-latest
+    name: Get changed files
+    outputs:
+      all_changed_files: ${{ steps.changed-package-files.outputs.all_changed_files }}
+      any_changed: ${{ steps.changed-package-files.outputs.any_changed }}
+      containerfiles: ${{ steps.packages.outputs.containerfiles }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+
+      - name: Setup Just
+        uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
+
+      - name: Check Just Syntax
+        uses: ublue-os/just@205c35468e90e4973e79ca37597be9cf242a5760
+
+      - name: Get directories with container files
+        id: containerfiledirs
+        run: |
+          FILESLIST="./files.txt"
+          find . -type f -iname '*.Containerfile' -exec 'dirname' '{}' ';' 2>/dev/null | xargs -I{} echo "{}/**" > $FILESLIST
+          echo "fileslist=$FILESLIST" >> $GITHUB_OUTPUT
+
+      - name: Get all changed files from package directores
+        id: changed-package-files
+        uses: step-security/changed-files@95b56dadb92a30ca9036f16423fd3c088a71ee94 # v46
+        with:
+          files_from_source_file: ${{ steps.containerfiledirs.outputs.fileslist }}
+
+      - name: Get all packages that need to be rebuilt
+        id: packages
+        if: steps.changed-package-files.outputs.any_changed == 'true'
+        env:
+          ALL_CHANGED_FILES: ${{ steps.changed-package-files.outputs.all_changed_files }}
+        run: |
+          CONTAINERFILE_DIRS=()
+          while IFS= read -r -d $'\0'; do
+            CONTAINERFILE_DIRS+=("$(realpath "--relative-to=${GITHUB_WORKSPACE}" "$(dirname "${REPLY}")")")
+          done < <(find . -type f -iname '*.Containerfile' -print0)
+
+          ALL_CONTAINERFILES=()
+          for file in ${ALL_CHANGED_FILES} ; do
+            if [ "${file##*.}" == "Containerfile" ] ; then
+              ALL_CONTAINERFILES+=("$(realpath --relative-to="${GITHUB_WORKSPACE}" "${file}")")
+              continue
+            fi
+            # We need this else PRs editing random files wont get the specs building due to not bumping them directly
+            # This way we still get the checks although we kinda need the bumped spec on the COPR (will be enforced after build)
+            cd "$(dirname "${file}")"
+            while : ; do
+              pwd
+              while IFS=  read -r -d $'\0'; do
+                ALL_CONTAINERFILES+=("$(realpath --relative-to="${GITHUB_WORKSPACE}" "${REPLY}")")
+              done < <(find . -maxdepth 1 -type f -iname "*.Containerfile" -print0)
+              [[ " ${CONTAINERFILE_DIRS[*]} " =~ [[:space:]]$(realpath --relative-to="${GITHUB_WORKSPACE}" ${PWD})[[:space:]] ]] && break
+              cd ..
+            done
+            cd "${GITHUB_WORKSPACE}"
+          done
+
+      # Build image using Buildah action
+      - name: Build Image
+        id: build_image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          containerfiles: |
+            ${{ needs.changed_files.outputs.containerfiles }}
+          image: ${{ env.IMAGE_NAME }}
+          tags: |
+            ${{ steps.generate-tags.outputs.alias_tags }}
+            ${{ steps.generate-tags.outputs.date }}
+            ${{ steps.generate-tags.outputs.sha_short }}
+          oci: true
+
+      # Workaround bug where capital letters in your GitHub username make it impossible to push to GHCR.
+      # https://github.com/macbre/push-to-ghcr/issues/12
+      - name: Lowercase Registry
+        id: registry_case
+        uses: ASzc/change-string-case-action@v6
+        with:
+          string: ${{ env.IMAGE_REGISTRY }}
+
+      # Push the image to GHCR (Image Registry)
+      - name: Push To GHCR
+        uses: redhat-actions/push-to-registry@v2
+        id: push
+        if: github.event_name != 'pull_request'
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ github.token }}
+        with:
+          image: ${{ steps.build_image.outputs.image }}
+          tags: ${{ steps.build_image.outputs.tags }}
+          registry: ${{ steps.registry_case.outputs.lowercase }}
+          username: ${{ env.REGISTRY_USER }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+
+
+      # Workaround bug where capital letters in your GitHub username make it impossible to push to GHCR.
+      # https://github.com/macbre/push-to-ghcr/issues/12
+      - name: Lowercase Registry
+        id: registry_case
+        uses: ASzc/change-string-case-action@d0603cd0a7dd490be678164909f65c7737470a7f # v6
+        with:
+          string: ${{ env.IMAGE_REGISTRY }}
+
+      - name: Login to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | podman login ghcr.io -u ${{ github.actor }} --password-stdin
+
+
+#      - name: Install Cosign
+#        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+#        if: github.event_name != 'pull_request'
+
+#      - name: Sign container image
+#        if: github.event_name != 'pull_request'
+#        run: |
+#          cosign sign -y --key env://COSIGN_PRIVATE_KEY ${{ steps.registry_case.outputs.lowercase }}/${{ env.IMAGE_NAME }}@${TAGS}
+#        env:
+#          TAGS: ${{ steps.push.outputs.outputs && fromJSON(steps.push.outputs.outputs).digest }}
+#          COSIGN_EXPERIMENTAL: false
+#          COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+
+#      - name: Sign container image
+#        if: github.event_name != 'pull_request' && contains(matrix.image_flavor, 'hwe')
+#        shell: bash
+#        run: |
+#          image_name="${{ env.IMAGE_NAME }}"
+#          asus_name="${image_name/hwe/asus}"
+#          surface_name="${image_name/hwe/surface}"
+#          cosign sign -y --key env://COSIGN_PRIVATE_KEY ${{ steps.registry_case.outputs.lowercase }}/${asus_name}@${TAGS}
+#          cosign sign -y --key env://COSIGN_PRIVATE_KEY ${{ steps.registry_case.outputs.lowercase }}/${surface_name}@${TAGS}
+#        env:
+#          TAGS: ${{ steps.push.outputs.outputs && fromJSON(steps.push.outputs.outputs).digest }}
+#          COSIGN_EXPERIMENTAL: false
+#          COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+
