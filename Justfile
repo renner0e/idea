@@ -32,7 +32,7 @@ build $package="" ghcr="0":
 
     echo "Building package: ${package}"
 
-    mapfile -t TAGS < <(just gen-builds-tags)
+    mapfile -t TAGS < <(just gen-build-tags)
     
     for containerfile in $(find "${package}" -iname '*\.Containerfile*'); do
       # Get the name of the container by stripping the file extension
